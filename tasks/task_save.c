@@ -1836,7 +1836,16 @@ void set_save_state_in_background(bool state)
 char* save_state_info(void)
 {
    void* save_data = NULL;
-   char state_data[300]; // This should NEVER overflow. If it does we are doing something very wrong.
+   /* Must not be a stack-local array: this function returns a pointer to
+    * it, and the JS caller (see emulatorjs.js's saveStateInfo cwrap, return
+    * type "string") reads the string back via UTF8ToString() on that raw
+    * pointer -- it never calls back into C to free anything, despite the
+    * comment below. A stack-local buffer is invalid the instant this
+    * function returns, so the string JS reads back is whatever happens to
+    * still be sitting at that stack address by the time it's read -- this
+    * was observed to produce garbled, non-ASCII console output on every
+    * single call (success or failure) rather than the intended message. */
+   static char state_data[300]; // This should NEVER overflow. If it does we are doing something very wrong.
    memset(state_data, '\0', sizeof(state_data));
 
    size_t serial_size;
