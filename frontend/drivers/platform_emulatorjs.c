@@ -294,7 +294,7 @@ void platform_emscripten_get_canvas_size(int *width, int *height)
    *width  = PLATFORM_GETVAL(u32, &emscripten_platform_data->canvas_width);
    *height = PLATFORM_GETVAL(u32, &emscripten_platform_data->canvas_height);
 
-   if (*width != 0 || *height != 0)
+   if (*width != 0 && *height != 0)
       return;
 
    *width  = 800;
