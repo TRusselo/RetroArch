@@ -26,6 +26,37 @@ var LibraryEmulatorJS = {
         const data = HEAPU8.subarray(dataStart, dataStart + size);
         return data;
     },
+
+    EmulatorJSShowKeyboard__deps: ['$Asyncify', 'malloc'],
+    EmulatorJSShowKeyboard__async: true,
+    EmulatorJSShowKeyboard__sig: 'iiii',
+    EmulatorJSShowKeyboard: function(hintPtr, maxLength, passwordMode) {
+        const hint = (hintPtr && UTF8ToString(hintPtr)) || "";
+        return Asyncify.handleSleep(function(wakeUp) {
+            const respond = function(result) {
+                if (typeof result !== "string") {
+                    wakeUp(0);
+                    return;
+                }
+                const lenBytes = lengthBytesUTF8(result) + 1;
+                const ptr = _malloc(lenBytes);
+                stringToUTF8(result, ptr, lenBytes);
+                wakeUp(ptr);
+            };
+            const fn = Module.getInputText;
+            if (typeof fn !== "function") {
+                console.warn("EmulatorJSShowKeyboard: Module.getInputText not set, falling back to prompt()");
+                respond(window.prompt(hint || "Enter text:", "") || null);
+                return;
+            }
+            Promise.resolve(fn({ hint: hint, maxLength: maxLength, password: !!passwordMode }))
+                .then(respond)
+                .catch(function(err) {
+                    console.error("getInputText threw:", err);
+                    respond(null);
+                });
+        });
+    },
 };
 
 addToLibrary(LibraryEmulatorJS);

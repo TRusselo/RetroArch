@@ -63,10 +63,10 @@ HAVE_THREADS ?= 0
 HAVE_AUDIOWORKLET ?= 0
 
 # doesn't work on PROXY_TO_PTHREAD
-HAVE_RWEBAUDIO ?= 0
+HAVE_RWEBAUDIO ?= 1
 
 # requires ASYNC or PROXY_TO_PTHREAD
-HAVE_AL ?= 1
+HAVE_AL ?= 0
 
 # whether the browser thread is allowed to block to wait for audio to play, not CPU usage-friendly!
 # currently this variable is only used by rwebaudio and audioworklet; openal will never busywait.
@@ -123,10 +123,11 @@ OBJDIR := obj-emscripten
 
 EXPORTED_FUNCTIONS = _main,_malloc,_free,_load_state, \
                      _ejs_set_variable,_simulate_input,_shader_enable,_save_state_info,_set_cheat,_cmd_take_screenshot, \
-                     _system_restart,_cmd_savefiles,_get_core_options,_cmd_save_state,_supports_states,_reset_cheat,_toggleMainLoop, \
+                     _system_restart,_cmd_savefiles,_get_core_options,_get_core_options_json,_cmd_save_state,_supports_states,_reset_cheat,_toggleMainLoop, \
                      _save_file_path,_get_disk_count,_set_current_disk,_get_current_disk,_refresh_save_files,_toggle_fastforward,_set_ff_ratio, \
                      _toggle_slow_motion,_set_sm_ratio,_toggle_rewind,_set_rewind_granularity,_get_current_frame_count,_ejs_set_keyboard_enabled, \
-                     _set_vsync,_set_video_rotation,_get_video_dimensions,EmscriptenSendCommand,EmscriptenReceiveCommandReply,_get_memory_data
+                     _set_vsync,_set_video_rotation,_get_video_dimensions,EmscriptenSendCommand,EmscriptenReceiveCommandReply,_get_memory_data, \
+                     _ejs_set_controller_port_device,_ejs_get_controller_port_info
 
 EXPORTS := Browser,callMain,cwrap,getValue,HEAPU8,FS,PATH,ERRNO_CODES,AL,abort,ENV,stringToNewUTF8,UTF8ToString,Browser,EmscriptenSendCommand,EmscriptenReceiveCommandReply,EmulatorJSGetState,EmulatorJSGetMemoryData
 
@@ -301,6 +302,9 @@ ifeq ($(DEBUG), 1)
    LDFLAGS += -O0 -g -gsource-map -s SAFE_HEAP=2 -s STACK_OVERFLOW_CHECK=2 -s ASSERTIONS=1
    # -O0 in cflags gives "too many locals" errors
    CFLAGS += -O1 -g -gsource-map
+else ifeq ($(LIGHT_DEBUG), 1)
+   LDFLAGS += -O2 -g -s ASSERTIONS=1
+   CFLAGS += -O2 -g
 else
    LDFLAGS += -O3
    # WARNING: some optimizations can break some cores (ex: LTO breaks tyrquake)

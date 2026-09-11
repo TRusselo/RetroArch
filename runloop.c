@@ -90,6 +90,11 @@
 #include <emscripten/emscripten.h>
 #endif
 
+#ifdef EMULATORJS
+#include <formats/rjson.h>
+#include <formats/rjson_helpers.h>
+#endif
+
 #ifdef HAVE_LIBNX
 #include <switch.h>
 #include "switch_performance_profiles.h"
@@ -8593,6 +8598,118 @@ char* get_core_options(void)
     return rv;
 }
 
+/* Outputs the Core Options as JSON, so that additional information
+ * from the core options can be read, like human readable
+ * labels, descriptions, and visibility. */
+char* get_core_options_json(void)
+{
+   runloop_state_t       *runloop_st = &runloop_state;
+   core_option_manager_t *coreopts   = runloop_st->core_options;
+   rjsonwriter_t         *writer     = NULL;
+   static char           *rv         = NULL;
+   char                  *json       = NULL;
+   int                    len        = 0;
+   size_t i, j;
+
+   if (   !coreopts
+       || (coreopts->size == 0))
+      return "";
+
+   if (!(writer = rjsonwriter_open_memory()))
+      return "";
+
+   rjsonwriter_add_start_object(writer);
+   rjsonwriter_add_string(writer, "options");
+   rjsonwriter_add_colon(writer);
+   rjsonwriter_add_start_array(writer);
+
+   for (i = 0; i < coreopts->size; i++)
+   {
+      struct core_option *option = (struct core_option*)&coreopts->opts[i];
+
+      if (i > 0)
+         rjsonwriter_add_comma(writer);
+      rjsonwriter_add_start_object(writer);
+
+      rjsonwriter_add_string(writer, "key");
+      rjsonwriter_add_colon(writer);
+      rjsonwriter_add_string(writer, option->key);
+
+      /* Request the uncategorised strings - the frontend presents all
+       * core options in a single flat list */
+      rjsonwriter_add_comma(writer);
+      rjsonwriter_add_string(writer, "desc");
+      rjsonwriter_add_colon(writer);
+      rjsonwriter_add_string(writer,
+            core_option_manager_get_desc(coreopts, i, false));
+
+      rjsonwriter_add_comma(writer);
+      rjsonwriter_add_string(writer, "info");
+      rjsonwriter_add_colon(writer);
+      rjsonwriter_add_string(writer,
+            core_option_manager_get_info(coreopts, i, false));
+
+      rjsonwriter_add_comma(writer);
+      rjsonwriter_add_string(writer, "current");
+      rjsonwriter_add_colon(writer);
+      rjsonwriter_add_string(writer,
+            core_option_manager_get_val(coreopts, i));
+
+      rjsonwriter_add_comma(writer);
+      rjsonwriter_add_string(writer, "default");
+      rjsonwriter_add_colon(writer);
+      rjsonwriter_add_string(writer,
+            (option->default_index < option->vals->size)
+                  ? option->vals->elems[option->default_index].data
+                  : NULL);
+
+      rjsonwriter_add_comma(writer);
+      rjsonwriter_add_string(writer, "visible");
+      rjsonwriter_add_colon(writer);
+      rjsonwriter_add_bool(writer, option->visible);
+
+      rjsonwriter_add_comma(writer);
+      rjsonwriter_add_string(writer, "values");
+      rjsonwriter_add_colon(writer);
+      rjsonwriter_add_start_array(writer);
+      for (j = 0; j < option->vals->size; j++)
+      {
+         if (j > 0)
+            rjsonwriter_add_comma(writer);
+         rjsonwriter_add_start_object(writer);
+
+         rjsonwriter_add_string(writer, "value");
+         rjsonwriter_add_colon(writer);
+         rjsonwriter_add_string(writer, option->vals->elems[j].data);
+
+         rjsonwriter_add_comma(writer);
+         rjsonwriter_add_string(writer, "label");
+         rjsonwriter_add_colon(writer);
+         rjsonwriter_add_string(writer,
+               (j < option->val_labels->size)
+                     ? option->val_labels->elems[j].data
+                     : option->vals->elems[j].data);
+
+         rjsonwriter_add_end_object(writer);
+      }
+      rjsonwriter_add_end_array(writer);
+
+      rjsonwriter_add_end_object(writer);
+   }
+
+   rjsonwriter_add_end_array(writer);
+   rjsonwriter_add_end_object(writer);
+
+   json = rjsonwriter_get_memory_buffer(writer, &len);
+
+   /* The buffer is owned by the writer, so copy the buffer. */
+   free(rv);
+   rv = ((json) && (len > 0)) ? strdup(json) : NULL;
+   rjsonwriter_free(writer);
+
+   return (rv) ? rv : "";
+}
+
 void set_video_rotation(int rotation)
 {
    settings_t *settings = config_get_ptr();
@@ -8669,5 +8786,58 @@ float get_video_dimensions(const char *key)
       RARCH_LOG("[Error]: Invalid key '%s' provided to get_video_dimensions\n", key);
       return -1.0f;
    }
+}
+
+void ejs_set_controller_port_device(unsigned port, unsigned device)
+{
+   retro_ctx_controller_info_t pad;
+   pad.port   = port;
+   pad.device = device;
+   core_set_controller_port_device(&pad);
+}
+
+char* ejs_get_controller_port_info(void)
+{
+   runloop_state_t     *runloop_st = &runloop_state;
+   rarch_system_info_t *sys_info   = &runloop_st->system;
+
+   if (!sys_info || !sys_info->ports.data || sys_info->ports.size == 0)
+      return "";
+
+   /* Calculate required buffer size */
+   size_t size = 1;
+   for (size_t i = 0; i < sys_info->ports.size; i++)
+   {
+      const struct retro_controller_info *port = &sys_info->ports.data[i];
+      for (size_t j = 0; j < port->num_types; j++)
+      {
+         if (!port->types[j].desc)
+            continue;
+         size += snprintf(NULL, 0, "%zu:%u:%s\n",
+               i, port->types[j].id, port->types[j].desc);
+      }
+   }
+
+   static char *rv = NULL;
+   free(rv);
+   rv = (char*)calloc(size, 1);
+   if (!rv)
+      return "";
+
+   for (size_t i = 0; i < sys_info->ports.size; i++)
+   {
+      const struct retro_controller_info *port = &sys_info->ports.data[i];
+      for (size_t j = 0; j < port->num_types; j++)
+      {
+         if (!port->types[j].desc)
+            continue;
+         char line[256];
+         snprintf(line, sizeof(line), "%zu:%u:%s\n",
+               i, port->types[j].id, port->types[j].desc);
+         strcat(rv, line);
+      }
+   }
+
+   return rv;
 }
 #endif
