@@ -167,8 +167,14 @@ void platform_emscripten_update_canvas_dimensions_cb(int width, int height, doub
    emscripten_set_canvas_element_size("!canvas", width, height);
    if (!emscripten_platform_data)
       return;
-   PLATFORM_SETVAL(u32, &emscripten_platform_data->canvas_width,        width);
+   /* Publish height first, then width. These are two separate atomic
+    * stores, so the pair is not observed atomically: a reader on the
+    * emulator thread could otherwise see the new width alongside a
+    * stale zero height and compute geometry from it. Storing width
+    * last makes it the release point -- a reader that sees a non-zero
+    * width is guaranteed to see the matching height. */
    PLATFORM_SETVAL(u32, &emscripten_platform_data->canvas_height,       height);
+   PLATFORM_SETVAL(u32, &emscripten_platform_data->canvas_width,        width);
    PLATFORM_SETVAL(f64, &emscripten_platform_data->device_pixel_ratio, *dpr);
 }
 
